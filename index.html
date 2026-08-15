@@ -254,6 +254,61 @@
     #file-input {
       display: none;
     }
+
+    /* Fullscreen Mode Styling */
+    body.fullscreen-mode {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000 !important;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    body.fullscreen-mode header {
+      display: none !important;
+    }
+
+    body.fullscreen-mode .sidebar {
+      display: none !important;
+    }
+
+    body.fullscreen-mode .controls-bar {
+      display: none !important;
+    }
+
+    body.fullscreen-mode .main-container {
+      max-width: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    body.fullscreen-mode .viewport-card {
+      background: none !important;
+      box-shadow: none !important;
+      border: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+
+    body.fullscreen-mode .viewport-container {
+      width: 100vw !important;
+      height: 100vh !important;
+      border-radius: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      aspect-ratio: auto !important;
+    }
   </style>
 </head>
 <body>
@@ -290,6 +345,7 @@
         <button id="btn-reset" class="btn btn-secondary" disabled>Reset</button>
         <button id="btn-mute" class="btn btn-secondary">Mute</button>
         <button id="btn-stats" class="btn btn-secondary">Show Stats</button>
+        <button id="btn-fullscreen" class="btn btn-secondary">Fullscreen</button>
         <button id="btn-file" class="btn btn-secondary">Browse...</button>
         <input type="file" id="file-input" accept=".wasc,.wasm">
       </div>
@@ -417,6 +473,7 @@
     const btnReset = document.getElementById('btn-reset');
     const btnMute = document.getElementById('btn-mute');
     const btnStats = document.getElementById('btn-stats');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
     const btnFile = document.getElementById('btn-file');
     const cardPerf = document.getElementById('card-perf');
 
@@ -663,6 +720,54 @@
       btnStats.textContent = diagnosticsVisible ? 'Hide Stats' : 'Show Stats';
     });
 
+    function toggleFullscreen() {
+      const isFullscreen = document.body.classList.toggle('fullscreen-mode');
+      if (isFullscreen) {
+        try {
+          const elem = document.documentElement;
+          if (elem.requestFullscreen) {
+            elem.requestFullscreen().catch(() => {});
+          }
+        } catch (e) {}
+      } else {
+        try {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          }
+        } catch (e) {}
+      }
+    }
+
+    btnFullscreen.addEventListener('click', toggleFullscreen);
+
+    // Double-click on canvases / placeholder to toggle fullscreen
+    canvas2d.addEventListener('dblclick', toggleFullscreen);
+    canvasGl.addEventListener('dblclick', toggleFullscreen);
+    placeholder.addEventListener('dblclick', toggleFullscreen);
+
+    // ESC key or F key to toggle fullscreen
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('fullscreen-mode')) {
+        toggleFullscreen();
+        e.preventDefault();
+        e.stopPropagation();
+      } else if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          toggleFullscreen();
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    }, true);
+
+    document.addEventListener('fullscreenchange', () => {
+      const isNativeFS = !!document.fullscreenElement;
+      const hasClass = document.body.classList.contains('fullscreen-mode');
+      if (isNativeFS !== hasClass) {
+        document.body.classList.toggle('fullscreen-mode', isNativeFS);
+      }
+    });
+
     function play() {
       initAudio();
       if (audioCtx && audioCtx.state === 'suspended') {
@@ -799,6 +904,41 @@
       gamepadStatus.textContent = activeGamepad ? 'Connected' : 'Disconnected';
       gamepadStatus.style.color = activeGamepad ? '#818cf8' : 'var(--text-muted)';
       return pads;
+    }
+
+    // Parse URL parameters on load
+    const urlParams = new URLSearchParams(window.location.search);
+    const wascUrl = urlParams.get('wasc');
+    const autoFullscreen = urlParams.has('fullscreen');
+
+    if (autoFullscreen) {
+      // Activate CSS-based fullscreen immediately on page load
+      document.body.classList.add('fullscreen-mode');
+    }
+
+    if (wascUrl) {
+      placeholder.querySelector('h3').textContent = 'Fetching cartridge...';
+      placeholder.querySelector('p').textContent = wascUrl;
+      
+      fetch(wascUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+          }
+          return response.arrayBuffer();
+        })
+        .then(async (buffer) => {
+          const mockFile = {
+            name: wascUrl.split('/').pop() || 'cart.wasc',
+            arrayBuffer: async () => buffer
+          };
+          await loadFile(mockFile);
+        })
+        .catch(err => {
+          placeholder.querySelector('h3').textContent = 'Load Failed';
+          placeholder.querySelector('p').textContent = err.message;
+          console.error('Error fetching remote cartridge:', err);
+        });
     }
   </script>
 </body>
