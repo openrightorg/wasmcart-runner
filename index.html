@@ -289,6 +289,7 @@
         </button>
         <button id="btn-reset" class="btn btn-secondary" disabled>Reset</button>
         <button id="btn-mute" class="btn btn-secondary">Mute</button>
+        <button id="btn-stats" class="btn btn-secondary">Show Stats</button>
         <button id="btn-file" class="btn btn-secondary">Browse...</button>
         <input type="file" id="file-input" accept=".wasc,.wasm">
       </div>
@@ -325,7 +326,7 @@
       </div>
 
       <!-- Performance Stats -->
-      <div class="info-card">
+      <div class="info-card" id="card-perf" style="display: none;">
         <h3>Performance</h3>
         <div class="info-grid">
           <div class="info-row">
@@ -400,6 +401,8 @@
     let audioQueue = [];
     let isMuted = false;
     let scriptNode = null;
+    let isAudioWarmedUp = false;
+    let diagnosticsVisible = false;
 
     // Viewport contexts
     const canvas2d = document.getElementById('canvas-2d');
@@ -413,7 +416,9 @@
     const btnPlay = document.getElementById('btn-play');
     const btnReset = document.getElementById('btn-reset');
     const btnMute = document.getElementById('btn-mute');
+    const btnStats = document.getElementById('btn-stats');
     const btnFile = document.getElementById('btn-file');
+    const cardPerf = document.getElementById('card-perf');
 
     // Diagnostics elements
     const infoName = document.getElementById('info-name');
@@ -479,24 +484,40 @@
     // Audio Initialization
     function initAudio() {
       if (audioCtx) return;
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       
-      scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
+      scriptNode = audioCtx.createScriptProcessor(512, 0, 2);
       scriptNode.onaudioprocess = (e) => {
         const left = e.outputBuffer.getChannelData(0);
         const right = e.outputBuffer.getChannelData(1);
         
-        if (isMuted || !isRunning) {
+        if (!isRunning) {
           left.fill(0);
           right.fill(0);
+          isAudioWarmedUp = false;
           return;
+        }
+
+        // Wait until we have enough samples buffered (e.g. 2048 elements = 1024 stereo samples, ~64ms)
+        // to prevent stuttering/choppiness due to RAF jitter.
+        if (!isAudioWarmedUp) {
+          if (audioQueue.length >= 2048) {
+            isAudioWarmedUp = true;
+          } else {
+            left.fill(0);
+            right.fill(0);
+            return;
+          }
         }
 
         for (let i = 0; i < left.length; i++) {
           if (audioQueue.length >= 2) {
-            left[i] = audioQueue.shift();
-            right[i] = audioQueue.shift();
+            const valL = audioQueue.shift();
+            const valR = audioQueue.shift();
+            left[i] = isMuted ? 0 : valL;
+            right[i] = isMuted ? 0 : valR;
           } else {
+            isAudioWarmedUp = false;
             left[i] = 0;
             right[i] = 0;
           }
@@ -554,6 +575,7 @@
 
         // Load cartridge bytes into host
         await cart.load(cartBytes, {
+          audioSampleRate: 16000,
           glBackend: () => {
             placeholder.style.display = 'none';
             canvas2d.style.display = 'none';
@@ -611,6 +633,7 @@
         cart.destroy();
         cart = new CartHostWeb();
         await cart.load(cartBytes, {
+          audioSampleRate: 16000,
           glBackend: () => {
             placeholder.style.display = 'none';
             canvas2d.style.display = 'none';
@@ -632,6 +655,12 @@
     btnMute.addEventListener('click', () => {
       isMuted = !isMuted;
       btnMute.textContent = isMuted ? 'Unmute' : 'Mute';
+    });
+
+    btnStats.addEventListener('click', () => {
+      diagnosticsVisible = !diagnosticsVisible;
+      cardPerf.style.display = diagnosticsVisible ? 'block' : 'none';
+      btnStats.textContent = diagnosticsVisible ? 'Hide Stats' : 'Show Stats';
     });
 
     function play() {
@@ -658,6 +687,7 @@
     function stopLoop() {
       pause();
       audioQueue = [];
+      isAudioWarmedUp = false;
       infoFrames.textContent = '0';
       infoFps.textContent = '0.0';
     }
@@ -697,8 +727,8 @@
           audioQueue.push(frame.audio[i]);
         }
         
-        // Prevent audio buffer overflow (clamp to 150ms)
-        const maxQueueSize = 48000 * 2 * 0.15;
+        // Prevent audio buffer overflow (clamp to 150ms at 16K sample rate)
+        const maxQueueSize = 16000 * 2 * 0.15;
         if (audioQueue.length > maxQueueSize) {
           audioQueue.splice(0, audioQueue.length - maxQueueSize);
         }
@@ -706,13 +736,17 @@
 
       // Performance diagnostic counters
       framesSinceLastUpdate++;
-      infoFrames.textContent = cart.frameCount;
+      if (diagnosticsVisible) {
+        infoFrames.textContent = cart.frameCount;
+      }
 
       const now = performance.now();
       const elapsed = now - lastFpsUpdate;
       if (elapsed >= 1000) {
-        const currentFps = (framesSinceLastUpdate * 1000 / elapsed).toFixed(1);
-        infoFps.textContent = currentFps;
+        if (diagnosticsVisible) {
+          const currentFps = (framesSinceLastUpdate * 1000 / elapsed).toFixed(1);
+          infoFps.textContent = currentFps;
+        }
         framesSinceLastUpdate = 0;
         lastFpsUpdate = now;
       }
