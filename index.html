@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>wasmcart Web Runner</title>
+  
+  <!-- Import Map for fflate and wasmcart browser packages -->
+  <script type="importmap">
+  {
+    "imports": {
+      "wasmcart/web": "https://esm.sh/wasmcart@0.16.3/web",
+      "fflate": "https://esm.sh/fflate@0.8.2"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      --panel-bg: rgba(30, 41, 59, 0.7);
+      --border-color: rgba(255, 255, 255, 0.1);
+      --accent-color: #6366f1;
+      --accent-hover: #4f46e5;
+      --text-color: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-color);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+      overflow-x: hidden;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(to right, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+
+    .main-container {
+      display: grid;
+      grid-template-columns: 1fr 350px;
+      gap: 2rem;
+      max-width: 1200px;
+      width: 100%;
+      align-items: start;
+    }
+
+    .viewport-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 1.5rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .viewport-container {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 336/240;
+      background: #000;
+      border-radius: 1rem;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .viewport-canvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .placeholder:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .placeholder svg {
+      width: 64px;
+      height: 64px;
+      fill: var(--text-muted);
+      margin-bottom: 1rem;
+      opacity: 0.8;
+      transition: transform 0.3s ease;
+    }
+
+    .placeholder:hover svg {
+      transform: scale(1.1);
+      fill: var(--accent-color);
+    }
+
+    .controls-bar {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      width: 100%;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: none;
+      border-radius: 0.75rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: var(--accent-color);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .info-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 1.25rem;
+      padding: 1.25rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .info-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.5rem;
+      color: #cbd5e1;
+    }
+
+    .info-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .info-label {
+      color: var(--text-muted);
+    }
+
+    .info-val {
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    .input-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .status-badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+    }
+
+    .status-badge.active {
+      background: rgba(99, 102, 241, 0.2);
+      color: #818cf8;
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+
+    #file-input {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>wasmcart Web Player</h1>
+    <p>Drag and drop a <code>.wasc</code> or <code>.wasm</code> cartridge to play</p>
+  </header>
+
+  <div class="main-container">
+    
+    <!-- Viewport Panel -->
+    <div class="viewport-card">
+      <div class="viewport-container" id="drop-zone">
+        <canvas id="canvas-2d" class="viewport-canvas"></canvas>
+        <canvas id="canvas-gl" class="viewport-canvas" style="display: none;"></canvas>
+        
+        <div id="placeholder" class="placeholder">
+          <svg viewBox="0 0 24 24">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/>
+          </svg>
+          <h3>Select or Drop Cartridge</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Supports standard .wasc and .wasm files</p>
+        </div>
+      </div>
+      
+      <div class="controls-bar">
+        <button id="btn-play" class="btn btn-primary" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          Play
+        </button>
+        <button id="btn-reset" class="btn btn-secondary" disabled>Reset</button>
+        <button id="btn-mute" class="btn btn-secondary">Mute</button>
+        <button id="btn-file" class="btn btn-secondary">Browse...</button>
+        <input type="file" id="file-input" accept=".wasc,.wasm">
+      </div>
+    </div>
+
+    <!-- Sidebar Diagnostics -->
+    <div class="sidebar">
+      
+      <!-- Cart Info -->
+      <div class="info-card">
+        <h3>Cartridge Details</h3>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-label">Name</span>
+            <span class="info-val" id="info-name">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Resolution</span>
+            <span class="info-val" id="info-res">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">GPU API</span>
+            <span class="info-val" id="info-gpu">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Save Size</span>
+            <span class="info-val" id="info-savesize">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">WASI Threads</span>
+            <span class="info-val" id="info-threads">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Performance Stats -->
+      <div class="info-card">
+        <h3>Performance</h3>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-label">Frames</span>
+            <span class="info-val" id="info-frames">0</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">FPS</span>
+            <span class="info-val" id="info-fps">0.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inputs Active -->
+      <div class="info-card">
+        <h3>Controls Mapping</h3>
+        <div class="info-grid" style="gap: 0.75rem;">
+          <div>
+            <span class="info-label" style="display:block; margin-bottom: 0.25rem;">Keyboard Layout (Atari mapped)</span>
+            <div class="input-status">
+              <span class="status-badge" id="key-up">↑ / W</span>
+              <span class="status-badge" id="key-down">↓ / S</span>
+              <span class="status-badge" id="key-left">← / A</span>
+              <span class="status-badge" id="key-right">→ / D</span>
+              <span class="status-badge" id="key-fire">Alt / Trigger</span>
+              <span class="status-badge" id="key-start">F4 (Start)</span>
+              <span class="status-badge" id="key-select">F3 (Select)</span>
+            </div>
+          </div>
+          <div>
+            <span class="info-label" style="display:block; margin-bottom: 0.25rem;">Gamepad</span>
+            <div class="info-row">
+              <span class="info-label">Status</span>
+              <span class="info-val" id="gamepad-status">Disconnected</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { CartHostWeb } from 'wasmcart/web';
+
+    // USB HID Keycode map
+    const KEY_MAP = {
+      KeyA: 0x04, KeyB: 0x05, KeyC: 0x06, KeyD: 0x07, KeyE: 0x08, KeyF: 0x09, KeyG: 0x0A,
+      KeyH: 0x0B, KeyI: 0x0C, KeyJ: 0x0D, KeyK: 0x0E, KeyL: 0x0F, KeyM: 0x10, KeyN: 0x11,
+      KeyO: 0x12, KeyP: 0x13, KeyQ: 0x14, KeyR: 0x15, KeyS: 0x16, KeyT: 0x17, KeyU: 0x18,
+      KeyV: 0x19, KeyW: 0x1A, KeyX: 0x1B, KeyY: 0x1C, KeyZ: 0x1D,
+      Digit1: 0x1E, Digit2: 0x1F, Digit3: 0x20, Digit4: 0x21, Digit5: 0x22,
+      Digit6: 0x23, Digit7: 0x24, Digit8: 0x25, Digit9: 0x26, Digit0: 0x27,
+      Enter: 0x28, Escape: 0x29, Backspace: 0x2A, Tab: 0x2B, Space: 0x2C,
+      Minus: 0x2D, Equal: 0x2E, BracketLeft: 0x2F, BracketRight: 0x30, Backslash: 0x31,
+      Semicolon: 0x33, Quote: 0x34, Grave: 0x35, Comma: 0x36, Period: 0x37, Slash: 0x38,
+      CapsLock: 0x39,
+      F1: 0x3A, F2: 0x3B, F3: 0x3C, F4: 0x3D, F5: 0x3E, F6: 0x3F,
+      F7: 0x40, F8: 0x41, F9: 0x42, F10: 0x43, F11: 0x44, F12: 0x45,
+      ArrowRight: 0x4F, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+      ControlLeft: 0xE0, ShiftLeft: 0xE1, AltLeft: 0xE2, MetaLeft: 0xE3,
+      ControlRight: 0xE4, ShiftRight: 0xE5, AltRight: 0xE6, MetaRight: 0xE7
+    };
+
+    let cart = null;
+    let cartBytes = null;
+    let isRunning = false;
+    let rafId = null;
+    
+    // Audio Context and Queue
+    let audioCtx = null;
+    let audioQueue = [];
+    let isMuted = false;
+    let scriptNode = null;
+
+    // Viewport contexts
+    const canvas2d = document.getElementById('canvas-2d');
+    const ctx2d = canvas2d.getContext('2d');
+    const canvasGl = document.getElementById('canvas-gl');
+    const placeholder = document.getElementById('placeholder');
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    // UI Buttons
+    const btnPlay = document.getElementById('btn-play');
+    const btnReset = document.getElementById('btn-reset');
+    const btnMute = document.getElementById('btn-mute');
+    const btnFile = document.getElementById('btn-file');
+
+    // Diagnostics elements
+    const infoName = document.getElementById('info-name');
+    const infoRes = document.getElementById('info-res');
+    const infoGpu = document.getElementById('info-gpu');
+    const infoSaveSize = document.getElementById('info-savesize');
+    const infoThreads = document.getElementById('info-threads');
+    const infoFrames = document.getElementById('info-frames');
+    const infoFps = document.getElementById('info-fps');
+    const gamepadStatus = document.getElementById('gamepad-status');
+
+    // Active key monitoring for badges
+    const keysDown = new Set();
+
+    // Setup input events
+    window.addEventListener('keydown', (e) => {
+      keysDown.add(e.code);
+      updateKeyBadges();
+      if (!cart) return;
+
+      const keycode = KEY_MAP[e.code];
+      if (keycode !== undefined) {
+        let modifiers = 0;
+        if (e.ctrlKey) modifiers |= 1;
+        if (e.shiftKey) modifiers |= 2;
+        if (e.altKey) modifiers |= 4;
+        if (e.metaKey) modifiers |= 8;
+        cart.keyDown(keycode, modifiers);
+        
+        // Prevent keyboard scrolling when playing
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+          e.preventDefault();
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keysDown.delete(e.code);
+      updateKeyBadges();
+      if (!cart) return;
+
+      const keycode = KEY_MAP[e.code];
+      if (keycode !== undefined) {
+        let modifiers = 0;
+        if (e.ctrlKey) modifiers |= 1;
+        if (e.shiftKey) modifiers |= 2;
+        if (e.altKey) modifiers |= 4;
+        if (e.metaKey) modifiers |= 8;
+        cart.keyUp(keycode, modifiers);
+      }
+    });
+
+    function updateKeyBadges() {
+      document.getElementById('key-up').classList.toggle('active', keysDown.has('ArrowUp') || keysDown.has('KeyW'));
+      document.getElementById('key-down').classList.toggle('active', keysDown.has('ArrowDown') || keysDown.has('KeyS'));
+      document.getElementById('key-left').classList.toggle('active', keysDown.has('ArrowLeft') || keysDown.has('KeyA'));
+      document.getElementById('key-right').classList.toggle('active', keysDown.has('ArrowRight') || keysDown.has('KeyD'));
+      document.getElementById('key-fire').classList.toggle('active', keysDown.has('AltLeft') || keysDown.has('AltRight'));
+      document.getElementById('key-start').classList.toggle('active', keysDown.has('F4'));
+      document.getElementById('key-select').classList.toggle('active', keysDown.has('F3'));
+    }
+
+    // Audio Initialization
+    function initAudio() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+      
+      scriptNode = audioCtx.createScriptProcessor(1024, 0, 2);
+      scriptNode.onaudioprocess = (e) => {
+        const left = e.outputBuffer.getChannelData(0);
+        const right = e.outputBuffer.getChannelData(1);
+        
+        if (isMuted || !isRunning) {
+          left.fill(0);
+          right.fill(0);
+          return;
+        }
+
+        for (let i = 0; i < left.length; i++) {
+          if (audioQueue.length >= 2) {
+            left[i] = audioQueue.shift();
+            right[i] = audioQueue.shift();
+          } else {
+            left[i] = 0;
+            right[i] = 0;
+          }
+        }
+      };
+      scriptNode.connect(audioCtx.destination);
+    }
+
+    // Drag-and-Drop Setup
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--accent-color)';
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.style.borderColor = 'var(--border-color)';
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--border-color)';
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        await loadFile(file);
+      }
+    });
+
+    btnFile.addEventListener('click', () => fileInput.click());
+    placeholder.addEventListener('click', () => fileInput.click());
+    
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (file) {
+        await loadFile(file);
+      }
+    });
+
+    async function loadFile(file) {
+      stopLoop();
+      placeholder.style.display = 'flex';
+      canvas2d.style.display = 'none';
+      canvasGl.style.display = 'none';
+      
+      placeholder.querySelector('h3').textContent = 'Loading...';
+      
+      try {
+        const buffer = await file.arrayBuffer();
+        cartBytes = new Uint8Array(buffer);
+        
+        // Reset/recreate host
+        if (cart) {
+          cart.destroy();
+        }
+        cart = new CartHostWeb();
+
+        // Load cartridge bytes into host
+        await cart.load(cartBytes, {
+          glBackend: () => {
+            placeholder.style.display = 'none';
+            canvas2d.style.display = 'none';
+            canvasGl.style.display = 'block';
+            return canvasGl.getContext('webgl2', { alpha: false, antialias: false });
+          }
+        });
+
+        // Setup 2D fallback layout if cart doesn't import GL
+        if (!cart.usesGL) {
+          placeholder.style.display = 'none';
+          canvasGl.style.display = 'none';
+          canvas2d.style.display = 'block';
+          canvas2d.width = cart.info.width;
+          canvas2d.height = cart.info.height;
+        }
+
+        // Update UI Diagnostics
+        infoName.textContent = file.name.substring(0, 20);
+        infoRes.textContent = `${cart.info.width}x${cart.info.height}`;
+        infoGpu.textContent = cart.usesGL ? 'WebGL2' : '2D Framebuffer';
+        infoSaveSize.textContent = `${cart.info.saveSize} B`;
+        infoThreads.textContent = cart.isThreaded ? 'Yes' : 'No';
+
+        btnPlay.disabled = false;
+        btnReset.disabled = false;
+        
+        btnPlay.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play`;
+        isRunning = false;
+        
+        // Auto-play immediately after dropping
+        play();
+      } catch (err) {
+        console.error(err);
+        placeholder.querySelector('h3').textContent = 'Error Loading File';
+        placeholder.querySelector('p').textContent = err.message;
+        btnPlay.disabled = true;
+        btnReset.disabled = true;
+      }
+    }
+
+    // Controls Action Binding
+    btnPlay.addEventListener('click', () => {
+      if (isRunning) {
+        pause();
+      } else {
+        play();
+      }
+    });
+
+    btnReset.addEventListener('click', async () => {
+      stopLoop();
+      if (cartBytes) {
+        audioQueue = [];
+        cart.destroy();
+        cart = new CartHostWeb();
+        await cart.load(cartBytes, {
+          glBackend: () => {
+            placeholder.style.display = 'none';
+            canvas2d.style.display = 'none';
+            canvasGl.style.display = 'block';
+            return canvasGl.getContext('webgl2', { alpha: false, antialias: false });
+          }
+        });
+        if (!cart.usesGL) {
+          placeholder.style.display = 'none';
+          canvasGl.style.display = 'none';
+          canvas2d.style.display = 'block';
+          canvas2d.width = cart.info.width;
+          canvas2d.height = cart.info.height;
+        }
+        play();
+      }
+    });
+
+    btnMute.addEventListener('click', () => {
+      isMuted = !isMuted;
+      btnMute.textContent = isMuted ? 'Unmute' : 'Mute';
+    });
+
+    function play() {
+      initAudio();
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      isRunning = true;
+      btnPlay.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> Pause`;
+      lastFpsUpdate = performance.now();
+      framesSinceLastUpdate = 0;
+      rafId = requestAnimationFrame(loop);
+    }
+
+    function pause() {
+      isRunning = false;
+      btnPlay.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play`;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    function stopLoop() {
+      pause();
+      audioQueue = [];
+      infoFrames.textContent = '0';
+      infoFps.textContent = '0.0';
+    }
+
+    // Main running loop
+    let lastFpsUpdate = 0;
+    let framesSinceLastUpdate = 0;
+
+    function loop() {
+      if (!isRunning) return;
+
+      // Check Gamepads
+      const pads = getGamepadState();
+
+      // Tick the cart frame
+      const frame = cart.runFrame(pads);
+
+      // Blit framebuffer to 2D canvas if cart uses 2D framebuffer
+      if (frame.framebuffer) {
+        const imgData = ctx2d.createImageData(frame.width, frame.height);
+        const data = imgData.data;
+        const fb = frame.framebuffer;
+        
+        // Convert BGRA byte order to RGBA
+        for (let i = 0; i < data.length; i += 4) {
+          data[i]     = fb[i + 2]; // Red
+          data[i + 1] = fb[i + 1]; // Green
+          data[i + 2] = fb[i];     // Blue
+          data[i + 3] = fb[i + 3]; // Alpha
+        }
+        ctx2d.putImageData(imgData, 0, 0);
+      }
+
+      // Stream audio to audioQueue
+      if (frame.audio && frame.audio.length > 0) {
+        for (let i = 0; i < frame.audio.length; i++) {
+          audioQueue.push(frame.audio[i]);
+        }
+        
+        // Prevent audio buffer overflow (clamp to 150ms)
+        const maxQueueSize = 48000 * 2 * 0.15;
+        if (audioQueue.length > maxQueueSize) {
+          audioQueue.splice(0, audioQueue.length - maxQueueSize);
+        }
+      }
+
+      // Performance diagnostic counters
+      framesSinceLastUpdate++;
+      infoFrames.textContent = cart.frameCount;
+
+      const now = performance.now();
+      const elapsed = now - lastFpsUpdate;
+      if (elapsed >= 1000) {
+        const currentFps = (framesSinceLastUpdate * 1000 / elapsed).toFixed(1);
+        infoFps.textContent = currentFps;
+        framesSinceLastUpdate = 0;
+        lastFpsUpdate = now;
+      }
+
+      rafId = requestAnimationFrame(loop);
+    }
+
+    // Retrieve and normalize gamepad states
+    function getGamepadState() {
+      const pads = [];
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      let activeGamepad = false;
+
+      for (let i = 0; i < 4; i++) {
+        const gp = gamepads[i];
+        if (gp) {
+          activeGamepad = true;
+          let buttons = 0;
+          if (gp.buttons[0]?.pressed) buttons |= 1 << 0;  // A
+          if (gp.buttons[1]?.pressed) buttons |= 1 << 1;  // B
+          if (gp.buttons[2]?.pressed) buttons |= 1 << 2;  // X
+          if (gp.buttons[3]?.pressed) buttons |= 1 << 3;  // Y
+          if (gp.buttons[4]?.pressed) buttons |= 1 << 4;  // L
+          if (gp.buttons[5]?.pressed) buttons |= 1 << 5;  // R
+          if (gp.buttons[9]?.pressed) buttons |= 1 << 6;  // START
+          if (gp.buttons[8]?.pressed) buttons |= 1 << 7;  // SELECT
+          if (gp.buttons[12]?.pressed) buttons |= 1 << 8; // UP
+          if (gp.buttons[13]?.pressed) buttons |= 1 << 9; // DOWN
+          if (gp.buttons[14]?.pressed) buttons |= 1 << 10;// LEFT
+          if (gp.buttons[15]?.pressed) buttons |= 1 << 11;// RIGHT
+          if (gp.buttons[10]?.pressed) buttons |= 1 << 12;// L3
+          if (gp.buttons[11]?.pressed) buttons |= 1 << 13;// R3
+
+          pads.push({
+            connected: true,
+            name: gp.id,
+            buttons,
+            leftX: Math.round((gp.axes[0] || 0) * 32767),
+            leftY: Math.round((gp.axes[1] || 0) * 32767),
+            rightX: Math.round((gp.axes[2] || 0) * 32767),
+            rightY: Math.round((gp.axes[3] || 0) * 32767),
+            leftTrigger: Math.round((gp.buttons[6]?.value || 0) * 255),
+            rightTrigger: Math.round((gp.buttons[7]?.value || 0) * 255),
+          });
+        } else {
+          pads.push({ connected: false });
+        }
+      }
+
+      gamepadStatus.textContent = activeGamepad ? 'Connected' : 'Disconnected';
+      gamepadStatus.style.color = activeGamepad ? '#818cf8' : 'var(--text-muted)';
+      return pads;
+    }
+  </script>
+</body>
+</html>
